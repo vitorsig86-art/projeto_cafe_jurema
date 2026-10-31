@@ -96,12 +96,51 @@ tr.cur td{font-weight:600}
 .chip.no{background:color-mix(in srgb,#b3261e 14%,transparent);color:#b3261e}
 .mini{font-size:12px;color:var(--muted);margin:8px 0 0}
 footer{padding:0 clamp(16px,3vw,32px) 28px;font-size:12.5px;color:var(--muted)}
+/* celular: cena logo abaixo do título, tempo sobre a cena, um dedo rola a página e dois dedos movem a cena; tela cheia libera um dedo */
+.mtime,.bt-tela,.toque,.mais{display:none}
+@media (max-width:700px){
+  header{padding:14px 14px 8px;gap:8px}
+  h1{font-size:22px}
+  .lede{font-size:14px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+  .lede.aberta{display:block}
+  .mais{display:inline;justify-self:start;border:0;background:none;padding:0;font-size:13px;color:var(--accent);text-decoration:underline}
+  #cenarios{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x proximity;margin:0 -14px;padding:2px 14px 4px;scrollbar-width:none}
+  #cenarios::-webkit-scrollbar,.stage .views::-webkit-scrollbar{display:none}
+  #cenarios button{white-space:nowrap;scroll-snap-align:start;flex:none}
+  main{padding:0 10px 20px;gap:12px}
+  .stage{height:66svh;min-height:380px;max-height:640px;border-radius:12px}
+  .stage .views{flex-wrap:nowrap;overflow-x:auto;top:8px;left:8px;max-width:calc(100% - 58px);scrollbar-width:none}
+  .stage .views button{white-space:nowrap;flex:none;font-size:12px;padding:5px 10px}
+  .credit{display:none}
+  .yearbadge{right:12px;bottom:62px}
+  .yearbadge b{font-size:34px}
+  .yearbadge small{font-size:10px}
+  .yearbadge span{font-size:11px}
+  .tools{left:8px;bottom:62px;flex-wrap:wrap;max-width:calc(100% - 90px)}
+  .tools button,.tools select{font-size:12px;padding:5px 9px}
+  .hud{left:8px;top:46px;font-size:10.5px;line-height:1.4;padding:6px 9px;max-width:calc(100% - 142px)}
+  .hud b{font-size:15px}
+  .maplegend{right:8px;top:46px;font-size:10.5px;padding:6px 8px;max-width:126px;gap:2px;line-height:1.25}
+  .maplegend i{width:10px;height:10px;margin-right:4px}
+  .mtime{display:flex;position:absolute;left:8px;right:8px;bottom:8px;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:999px;background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(4px)}
+  .mtime button{width:38px;height:38px;padding:0;flex:none;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-size:14px}
+  .mtime input{flex:1;margin:0}
+  .mtime span{font:600 12px var(--mono);min-width:34px;text-align:right}
+  .bt-tela{display:block;position:absolute;top:8px;right:8px;width:38px;height:34px;padding:0;font-size:17px;line-height:1;background:color-mix(in srgb,var(--surface) 90%,transparent)}
+  .toque{display:grid;place-items:center;position:absolute;inset:0;pointer-events:none;background:rgba(16,21,14,.45);color:#fff;font:600 15px var(--body);text-align:center;padding:24px;opacity:0;transition:opacity .25s}
+  .toque.on{opacity:1}
+  .stage.cheia{position:fixed;inset:0;height:100dvh;max-height:none;min-height:0;border-radius:0;border:0;z-index:50}
+  .card{padding:12px 14px}
+  table{font-size:12.5px}
+  th,td{padding:5px 3px}
+}
 </style>
 </head>
 <body>
 <header>
   <h1>Jurema: café agroflorestal em <em>keyline</em></h1>
   <p class="lede" id="lede"></p>
+  <button class="mais" id="leMais" type="button" hidden>ler mais</button>
   <div class="chips" id="cenarios" role="group" aria-label="Desenho de plantio"></div>
 </header>
 <main>
@@ -121,6 +160,9 @@ footer{padding:0 clamp(16px,3vw,32px) 28px;font-size:12.5px;color:var(--muted)}
     <div class="hud" id="hud" hidden></div>
     <div class="maplegend" id="mapLeg" hidden></div>
     <div class="yearbadge"><small>ano</small><b id="anoBig">0</b><span id="anoCal">2026</span></div>
+    <div class="mtime" role="group" aria-label="Tempo"><button id="mPlay" type="button" aria-label="Passar os anos">▶</button><input id="mAno" type="range" min="0" max="30" step="1" value="0" aria-label="Ano da simulação"><span id="mAnoTxt">ano 0</span></div>
+    <button class="bt-tela" id="btTela" type="button" aria-pressed="false" aria-label="Tela cheia" title="Tela cheia">⤢</button>
+    <div class="toque" id="toque">Use dois dedos para girar e dar zoom, ou toque em ⤢ para explorar em tela cheia</div>
   </section>
   <aside>
     <div class="card">
@@ -361,12 +403,13 @@ function simular(ci){
 /* ---------- cena ---------- */
 const box=$('scene'); let renderer;
 try{ renderer=new THREE.WebGLRenderer({antialias:true}); }catch(e){ $('loading').textContent='WebGL indisponível neste navegador.'; throw e; }
-renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; renderer.outputColorSpace=THREE.SRGBColorSpace;
+const TOQUE=matchMedia('(pointer:coarse)').matches;   // celular e tablet: menos pixels e sombra menor para manter a fluidez
+renderer.setPixelRatio(Math.min(devicePixelRatio,TOQUE?1.5:2)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; renderer.outputColorSpace=THREE.SRGBColorSpace;
 box.appendChild(renderer.domElement);
 const scene=new THREE.Scene(); scene.background=new THREE.Color('#dfe6e9'); scene.fog=new THREE.Fog('#dfe6e9',Math.max(W,HH)*0.95,Math.max(W,HH)*2.25);
 const camera=new THREE.PerspectiveCamera(40,1,0.1,2000);
 const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true; controls.dampingFactor=0.08; controls.maxPolarAngle=Math.PI/2.05; controls.minDistance=4; controls.zoomToCursor=true; controls.zoomSpeed=2; controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN,RIGHT:THREE.MOUSE.PAN};   // roda: ~10% por clique; botão do meio arrasta o mapa, como no WebGIS controls.maxDistance=Math.max(150,Math.max(W,HH)*2.5);   // áreas pequenas não somem no zoom: a névoa acompanha a câmera (ver ajustaNevoa)
+controls.enableDamping=true; controls.dampingFactor=0.08; controls.maxPolarAngle=Math.PI/2.05; controls.minDistance=4; controls.zoomToCursor=true; controls.zoomSpeed=2; controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN,RIGHT:THREE.MOUSE.PAN}; controls.maxDistance=Math.max(200,Math.max(W,HH)*3);   // roda: ~10% por clique; botão do meio arrasta o mapa, como no WebGIS; áreas pequenas não somem no zoom: a névoa acompanha a câmera (ver ajustaNevoa)
 // névoa relativa à distância da câmera: a área fica sempre nítida e só o fundo esmaece
 const DMAX=Math.max(W,HH);
 function ajustaNevoa(){ const d=camera.position.distanceTo(controls.target); scene.fog.near=Math.max(DMAX*0.95,d+DMAX*0.6); scene.fog.far=Math.max(DMAX*2.25,d+DMAX*2.2); }
@@ -376,7 +419,7 @@ const P=(x,y,z)=>new THREE.Vector3(x-W/2,z,-(y-HH/2));
 scene.add(new THREE.HemisphereLight('#f2f6ff','#5b6b3a',0.75));
 const sun=new THREE.DirectionalLight('#fff3dd',1.9);
 sun.position.copy(P(W/2+60,HH/2+120,150)); sun.target.position.copy(P(W/2,HH/2,10));
-sun.castShadow=true; sun.shadow.mapSize.set(4096,4096); sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.04;
+sun.castShadow=true; sun.shadow.mapSize.set(TOQUE?2048:4096,TOQUE?2048:4096); sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.04;
 Object.assign(sun.shadow.camera,{left:-(W/2+20),right:W/2+20,top:HH/2+20,bottom:-(HH/2+20),near:1,far:sun.position.distanceTo(sun.target.position)+Math.max(W,HH)*1.3}); scene.add(sun,sun.target);   // far cobre a distância do sol até o chão em qualquer tamanho de área
 
 function drape(coords,dz,step=1){ const pts=[]; for(let i=0;i<coords.length-1;i++){ const [x0,y0]=coords[i],[x1,y1]=coords[i+1], n=Math.max(1,Math.ceil(Math.hypot(x1-x0,y1-y0)/step));
@@ -547,6 +590,7 @@ function vue(v){ document.querySelectorAll('.views button').forEach(b=>b.setAttr
   if(v==='vale'){ const [kx,ky]=S.keypoint; camera.position.copy(P(kx+8*k,ky+55*k,zAt(kx,ky)+6*Math.sqrt(k))); controls.target.copy(P(kx-10*k,ky-60*k,zAt(kx-10*k,ky-60*k)+2)); }
   if(v==='keypoint'){ const [kx,ky]=S.keypoint, z=zAt(kx,ky); camera.position.copy(P(kx+1.5,ky+1.5,z+1.65)); controls.target.copy(P(kx+20,ky-25,zAt(kx+20,ky-25)+1.2)); }
   if(v==='pe'){ const ref=ROTA.length>200?ROTA[200]:ROTA.length?ROTA[ROTA.length>>1]:[CF[0],CF[1]]; const c=entrelinha(ref[0],ref[1]); camera.position.copy(P(c.x,c.y,zAt(c.x,c.y)+1.45)); controls.target.copy(P(c.x+c.dx*18,c.y+c.dy*18,zAt(c.x+c.dx*18,c.y+c.dy*18)+1.0)); }
+  if((v==='geral'||v==='cima') && camera.aspect<1){ const f=clamp(1.25/camera.aspect,1,2.2); camera.position.sub(controls.target).multiplyScalar(f).add(controls.target); }   // tela em pé: afasta para caber a largura
   controls.update(); sujo=true; }
 
 /* ---------- interface ---------- */
@@ -581,8 +625,26 @@ function metas(){ const mr=+$('metaR').value, mh=+$('metaH').value;
   $('metas').innerHTML='<tr><th>Desenho</th><th>mil R$/ha</th><th>h/sem</th><th></th></tr>'+L.map(o=>`<tr data-i="${o.i}" class="${o.i===cen?'cur':''}"><td>${o.c.nome}</td><td>${fmt(o.r,1)}</td><td>${fmt(o.h,0)}</td><td><span class="chip ${o.ok?'ok':'no'}">${o.ok?'atende':(o.r<mr?'receita':'horas')}</span></td></tr>`).join('');
   [...$('metas').querySelectorAll('tr[data-i]')].forEach(tr=>tr.onclick=()=>zs.children[+tr.dataset.i].click()); }
 $('ano').oninput=e=>{ ano=+e.target.value; lecture=false; $('play').textContent='▶ Passar'; construir(); maj(); };
+$('mAno').max=ANOS; $('mAno').oninput=e=>{ $('ano').value=e.target.value; $('ano').dispatchEvent(new Event('input')); };
+$('mPlay').onclick=()=>$('play').click();
+function syncM(){ $('mPlay').textContent=lecture?'❚❚':'▶'; $('mPlay').setAttribute('aria-label',lecture?'Pausar':'Passar os anos'); const y=Math.round(ano); $('mAno').value=y; $('mAnoTxt').textContent='ano '+y; }
+/* celular: um dedo rola a página, dois dedos giram e dão zoom; em tela cheia um dedo gira */
+const stageEl=document.querySelector('.stage'); let cheia=false;
+function modoToque(){ const livre=!TOQUE||cheia;
+  controls.touches= livre ? {ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN} : {ONE:-1,TWO:THREE.TOUCH.DOLLY_ROTATE};
+  renderer.domElement.style.touchAction= livre ? 'none' : 'pan-y'; }
+modoToque();
+$('btTela').onclick=()=>{ cheia=!cheia; stageEl.classList.toggle('cheia',cheia); document.body.style.overflow=cheia?'hidden':''; $('btTela').textContent=cheia?'✕':'⤢';
+  $('btTela').setAttribute('aria-pressed',cheia); $('btTela').setAttribute('aria-label',cheia?'Sair da tela cheia':'Tela cheia'); modoToque(); };
+{ let dedos=0, tAviso=0; const aviso=$('toque');
+  renderer.domElement.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch'||cheia||!TOQUE) return; dedos++;
+    clearTimeout(tAviso); tAviso=setTimeout(()=>{ if(dedos===1){ aviso.classList.add('on'); setTimeout(()=>aviso.classList.remove('on'),1600); } },350); });
+  const solta=e=>{ if(e.pointerType==='touch') dedos=Math.max(0,dedos-1); };
+  renderer.domElement.addEventListener('pointerup',solta); renderer.domElement.addEventListener('pointercancel',solta); }
+{ const le=$('lede'), bt=$('leMais'); const ver=()=>{ bt.hidden=!(le.scrollHeight>le.clientHeight+2||le.classList.contains('aberta')); };
+  bt.onclick=()=>{ const a=le.classList.toggle('aberta'); bt.textContent=a?'ler menos':'ler mais'; }; requestAnimationFrame(ver); addEventListener('resize',ver); }
 let lecture=false, dernier=0;
-$('play').onclick=()=>{ lecture=!lecture; $('play').textContent=lecture?'❚❚ Pausar':'▶ Passar'; if(lecture&&ano>=ANOS) ano=0; dernier=0; };
+$('play').onclick=()=>{ lecture=!lecture; $('play').textContent=lecture?'❚❚ Pausar':'▶ Passar'; if(lecture&&ano>=ANOS) ano=0; dernier=0; syncM(); };
 $('indSel').onchange=dessiner;
 const fmt=(v,d=0)=>v.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct=v=>fmt(100*v,0)+'%';
@@ -591,7 +653,7 @@ function fase(y){ if(y<2) return ['formação','mudas e bananeira de formação'
   if(y<4) return ['entrada em produção','primeiras safras']; if(y<12) return ['plena produção','bienalidade alterna safras']; return ['produção pós-poda','lavoura renovada pelo esqueletamento']; }
 function maj(){
   const y=Math.round(ano), st=simular(cen), I=st.ind[y];
-  $('ano').value=y; $('anoBig').textContent=y; $('anoCal').textContent=ANO0+y;
+  $('ano').value=y; $('anoBig').textContent=y; $('anoCal').textContent=ANO0+y; syncM();
   const [f1,f2]=fase(y); $('fase').innerHTML=`Fase do café: <b>${f1}</b> (${f2})`;
   const sb=I.sombra<20?['ok','sombra leve']:I.sombra<40?['warn','sombra moderada']:['bad','sombra excessiva'];
   $('indTitulo').textContent=`${CEN[cen].id}. ano ${y} (${ANO0+y})`;
@@ -622,7 +684,7 @@ new ResizeObserver(taille).observe(box);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',dessiner);
 new MutationObserver(dessiner).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 function boucle(ts){ requestAnimationFrame(boucle);
-  if(lecture){ if(dernier){ ano=Math.min(ANOS,ano+(ts-dernier)/1000*1.2); construir(); if(Math.round(ano)!==+$('ano').value) maj(); if(ano>=ANOS){lecture=false;$('play').textContent='▶ Passar';} } dernier=ts; }
+  if(lecture){ if(dernier){ ano=Math.min(ANOS,ano+(ts-dernier)/1000*1.2); construir(); if(Math.round(ano)!==+$('ano').value) maj(); if(ano>=ANOS){lecture=false;$('play').textContent='▶ Passar';syncM();} } dernier=ts; }
   if(tratorOn && !pausaT){ if(tlast){ const i=Math.min(RB-1,RA+Math.floor(tpos/0.25)), kmh=RK[i]===0?4:RK[i]===1?3:8; tpos+=(ts-tlast)/1000*kmh/3.6*10; } tlast=ts; posTrator(); }
   controls.update(); if(sujo){ renderer.render(scene,camera); sujo=false; } }
 function textos(){ const R=S.resumo, f1=v=>fmt(v,0);
@@ -636,7 +698,7 @@ function textos(){ const R=S.resumo, f1=v=>fmt(v,0);
   $('metaR').value=CFG.metas.receita; $('metaH').value=CFG.metas.horas;
   const op=CFG.blocos.ids.map(k=>`<option value="${k}">${NOMEB[k]}</option>`).join('');
   $('trecho').insertAdjacentHTML('beforeend',op); $('opBloco').insertAdjacentHTML('beforeend',op); }
-textos(); legenda(); agua(); operacao(); vue('geral'); taille(); ano=8; construir(); maj(); requestAnimationFrame(boucle);
+textos(); legenda(); agua(); operacao(); taille(); vue('geral'); ano=8; construir(); maj(); requestAnimationFrame(boucle);
 window.__app={simular,CEN,renderer,POOL,construir,mapa,pausa:(v,pos)=>{pausaT=v; if(pos!=null){tpos=pos; posTrator();} sujo=true;},get ano(){return ano},set ano(v){ano=v}};
 </script>
 </body>

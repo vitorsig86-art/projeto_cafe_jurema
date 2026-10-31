@@ -112,11 +112,8 @@ footer{padding:0 clamp(16px,3vw,32px) 28px;font-size:12.5px;color:var(--muted)}
   .stage .views{flex-wrap:nowrap;overflow-x:auto;top:8px;left:8px;max-width:calc(100% - 58px);scrollbar-width:none}
   .stage .views button{white-space:nowrap;flex:none;font-size:12px;padding:5px 10px}
   .credit{display:none}
-  .yearbadge{right:12px;bottom:62px}
-  .yearbadge b{font-size:34px}
-  .yearbadge small{font-size:10px}
-  .yearbadge span{font-size:11px}
-  .tools{left:8px;bottom:62px;flex-wrap:wrap;max-width:calc(100% - 90px)}
+  .yearbadge,#trecho{display:none}
+  .tools{left:8px;bottom:60px;flex-wrap:nowrap}
   .tools button,.tools select{font-size:12px;padding:5px 9px}
   .hud{left:8px;top:46px;font-size:10.5px;line-height:1.4;padding:6px 9px;max-width:calc(100% - 142px)}
   .hud b{font-size:15px}
@@ -521,10 +518,11 @@ const POOL={};
 function pool(nome,geo,material,max,sombra=true){ const m=new THREE.InstancedMesh(geo,material,max); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   m.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(max*3),3); m.instanceColor.setUsage(THREE.DynamicDrawUsage); m.castShadow=sombra; m.receiveShadow=true; m.count=0; m.frustumCulled=false; scene.add(m); POOL[nome]={m,n:0,M:m.instanceMatrix.array,Cc:m.instanceColor.array,max}; }
 const maxT=Math.max(...Object.values(S.cen).map(c=>c.trees.length))+S.existentes.length, maxB=Math.max(...Object.values(S.cen).map(c=>c.banana.length+c.ban_perm.length));
-pool('cafeA',tufo(11,1),mat(),NC); pool('cafeB',tufo(23,1),mat(),NC); pool('cafeT',cil(.7,1,5),mat(),NC,false);
+// no celular o café só recebe sombra (as árvores continuam projetando)
+pool('cafeA',tufo(11,1),mat(),NC,!TOQUE); pool('cafeB',tufo(23,1),mat(),NC,!TOQUE); pool('cafeT',cil(.7,1,5),mat(),NC,false);
 pool('fruto',new THREE.IcosahedronGeometry(1,0),mat({roughness:.5}),NC*4+maxT*20,false);
 pool('tronco',cil(.7,1,7),mat(),maxT+5); pool('galho',cil(.6,1,5),mat(),maxT*4+10);
-pool('tufoA',tufo(31,2),mat(),maxT*9+10); pool('tufoB',tufo(47,2),mat(),maxT*9+10);
+pool('tufoA',tufo(31,TOQUE?1:2),mat(),maxT*9+10); pool('tufoB',tufo(47,TOQUE?1:2),mat(),maxT*9+10);   // no celular a copa tem 1/4 das faces
 pool('estipe',cil(.8,1,7),mat(),maxB+2); pool('folha',folha,mat({side:THREE.DoubleSide}),maxB*7+7); pool('cacho',cil(.45,.25,6),mat(),maxB+2);
 // composição rápida de matriz: escala + rotação em Y + translação
 const CC=new THREE.Color();
@@ -551,7 +549,7 @@ function construir(){
     poeR(pA,x,yb+H*0.4,z,R,H*0.32,R*0.85,ro,r,g,b);
     poeR(pB,x,yb+H*0.74,z,R*0.62,H*0.24,R*0.55,ro+1,r*1.05,g*1.05,b*1.05);
     const f=st.cF[yi*NC+i];
-    if(f>0.05){ const nf=Math.min(4,Math.round(f*7)), rr=mulberry(i*3+1);
+    if(f>0.05){ const nf=Math.min(TOQUE?2:4,Math.round(f*(TOQUE?3.5:7))), rr=mulberry(i*3+1);
       for(let q=0;q<nf;q++){ const a=rr()*6.283, hh=0.3+rr()*0.4, rad=R*0.9*(1-hh*0.3), c=rr()<0.85?CVERM:CAMAR;
         poeR(pF,x+Math.cos(a)*rad,yb+H*hh,z+Math.sin(a)*rad,0.07,0.07,0.07,0,c.r,c.g,c.b); } }
   }
@@ -583,6 +581,21 @@ function construir(){
 function perto(x,y,ex=-1){ let b=-1,bd=1e9; for(let i=0;i<NC;i++){ if(i===ex) continue; const d=(CF[i*3]-x)**2+(CF[i*3+1]-y)**2; if(d<bd){bd=d;b=i;} } return [b,Math.sqrt(bd)]; }
 function entrelinha(x,y){ const [i]=perto(x,y), xi=CF[i*3], yi=CF[i*3+1]; const [j]=perto(xi,yi,i); let dx=CF[j*3]-xi, dy=CF[j*3+1]-yi; const L=Math.hypot(dx,dy); dx/=L; dy/=L;
   let best=null; for(const s of [1,-1]){ const cx=xi-dy*s*1.85, cy=yi+dx*s*1.85, d=perto(cx,cy)[1]; if(!best||d>best.d) best={x:cx,y:cy,d}; } return {x:best.x,y:best.y,dx,dy}; }
+// câmera na direção dada (horizontal em coordenadas da área + elevação) à distância mínima em que os cantos da área cabem na tela
+function enquadra([hx,hy],elev){
+  // pontos do perímetro no chão e 10 m acima (copas); a câmera é afastada e deslocada até o conjunto ocupar a área útil da tela
+  const pts=[]; for(const [x,y] of PER){ const z=zAt(clamp(x,0,W-1),clamp(y,0,HH-1)); pts.push(P(x,y,z),P(x,y,z+10)); }
+  const d3=new THREE.Vector3(hx*Math.cos(elev),Math.sin(elev),-hy*Math.cos(elev)).normalize(), T=P(W/2,HH/2,zAt(W/2,HH/2));
+  const f=d3.clone().negate(), rr=new THREE.Vector3().crossVectors(f,camera.up).normalize(), uu=new THREE.Vector3().crossVectors(rr,f);
+  const hpx=box.clientHeight||600, yb=-1+2*($('btTrator').hidden?72:104)/hpx, yt=1-2*48/hpx;   // faixas ocupadas pelos botões (topo) e pela barra do tempo (base)
+  let d=Math.max(W,HH)*1.5;
+  for(let it=0;it<4;it++){
+    camera.position.copy(T).addScaledVector(d3,d); camera.lookAt(T); camera.updateMatrixWorld();
+    let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for(const q of pts){ const v=q.clone().project(camera); x0=Math.min(x0,v.x); x1=Math.max(x1,v.x); y0=Math.min(y0,v.y); y1=Math.max(y1,v.y); }
+    const tv=Math.tan(camera.fov*Math.PI/360), th=tv*camera.aspect;
+    T.addScaledVector(rr,(x0+x1)/2*th*d).addScaledVector(uu,((y0+y1)/2-(yb+yt)/2)*tv*d);
+    d*=Math.max((x1-x0)/2/0.94,(y1-y0)/(yt-yb)/0.97); }
+  camera.position.copy(T).addScaledVector(d3,d); controls.target.copy(T); }
 function vue(v){ document.querySelectorAll('.views button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.vue===v));
   const zc=zAt(W/2,HH/2), k=clamp(Math.max(W,HH)/300,0.32,2.5);   // vistas calibradas para ~300 m, escaladas pelo tamanho da área
   if(v==='geral'){ camera.position.copy(P(W/2+150*k,HH/2+(HH/2+170)*k,zc+210*k)); controls.target.copy(P(W/2+10*k,HH/2-5*k,zc)); }
@@ -590,7 +603,9 @@ function vue(v){ document.querySelectorAll('.views button').forEach(b=>b.setAttr
   if(v==='vale'){ const [kx,ky]=S.keypoint; camera.position.copy(P(kx+8*k,ky+55*k,zAt(kx,ky)+6*Math.sqrt(k))); controls.target.copy(P(kx-10*k,ky-60*k,zAt(kx-10*k,ky-60*k)+2)); }
   if(v==='keypoint'){ const [kx,ky]=S.keypoint, z=zAt(kx,ky); camera.position.copy(P(kx+1.5,ky+1.5,z+1.65)); controls.target.copy(P(kx+20,ky-25,zAt(kx+20,ky-25)+1.2)); }
   if(v==='pe'){ const ref=ROTA.length>200?ROTA[200]:ROTA.length?ROTA[ROTA.length>>1]:[CF[0],CF[1]]; const c=entrelinha(ref[0],ref[1]); camera.position.copy(P(c.x,c.y,zAt(c.x,c.y)+1.45)); controls.target.copy(P(c.x+c.dx*18,c.y+c.dy*18,zAt(c.x+c.dx*18,c.y+c.dy*18)+1.0)); }
-  if((v==='geral'||v==='cima') && camera.aspect<1){ const f=clamp(1.25/camera.aspect,1,2.2); camera.position.sub(controls.target).multiplyScalar(f).add(controls.target); }   // tela em pé: afasta para caber a largura
+  if((v==='geral'||v==='cima') && camera.aspect<1){   // tela em pé: o lado maior da área vai na vertical da tela e o enquadramento cabe a área inteira
+    const lx=W>=HH?1:0.35, ly=W>=HH?0.35:1, n=Math.hypot(lx,ly);
+    if(v==='geral') enquadra([lx/n,ly/n],38*Math.PI/180); else enquadra(W>=HH?[1,0]:[0,1],89.6*Math.PI/180); }
   controls.update(); sujo=true; }
 
 /* ---------- interface ---------- */
@@ -630,7 +645,8 @@ $('mPlay').onclick=()=>$('play').click();
 function syncM(){ $('mPlay').textContent=lecture?'❚❚':'▶'; $('mPlay').setAttribute('aria-label',lecture?'Pausar':'Passar os anos'); const y=Math.round(ano); $('mAno').value=y; $('mAnoTxt').textContent='ano '+y; }
 /* celular: um dedo rola a página, dois dedos giram e dão zoom; em tela cheia um dedo gira */
 const stageEl=document.querySelector('.stage'); let cheia=false;
-function modoToque(){ const livre=!TOQUE||cheia;
+function modoToque(){ const livre=!TOQUE||cheia; if(TOQUE) controls.zoomSpeed=1;   // pinça na proporção dos dedos (a roda do mouse segue com 2)
+ 
   controls.touches= livre ? {ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN} : {ONE:-1,TWO:THREE.TOUCH.DOLLY_ROTATE};
   renderer.domElement.style.touchAction= livre ? 'none' : 'pan-y'; }
 modoToque();
